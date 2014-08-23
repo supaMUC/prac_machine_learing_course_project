@@ -1,0 +1,89 @@
+---
+title: "Course Project - Practical Machine Learning"
+author: "Matthias Stierle"
+date: "20.08.2014"
+output: html_document
+---
+##1. Load Data
+```{r,cache=TRUE}
+#data <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+data <- read.csv("pml-training.csv")
+#testing <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+Data Source:  http://groupware.les.inf.puc-rio.br/har
+
+##2. Create Test and Training Data Set
+```{r,cache=TRUE}
+library("caret")
+data <- data[!data$classe=="",]
+trainIndex <- createDataPartition(data$classe,p=0.6,list=FALSE) ##Create split vector
+training <- data[trainIndex,] ##Create training data set
+testing <- data[-trainIndex,] ##Create test data set
+``` 
+
+##3. Preprocessing
+###3.1 Training Data
+```{r,cache=TRUE}
+training$cvtd_timestamp <- strptime(training$cvtd_timestamp, "%d/%m/%Y %H:%M") ##Convert to timestamp
+training$user_name <- as.numeric(training$user_name) ##Convert user name to numeric
+training$new_window <- as.numeric(training$new_window) ##Convert to numeric
+
+factor_columns <- sapply(training,is.factor) ##Determine Factor Columns
+factor_columns[length(training)]<-FALSE ##Remove Target Column from vector
+
+for (i in 1:length(training)) {       ##Replace invalid values in factor columns
+  if (factor_columns[i]) {
+    for (j in 1:nrow(training)) {
+      training[j,i] <- if (training[j,i]=="") "0" else if (training[j,i]=="#DIV/0!") "0" else training[j,i]
+    }
+  training[,i] <- as.numeric(training[,i]) ##Convert factor columns to numeric
+  }
+}
+training <- training[,colSums(is.na(training))<0.5*nrow(training)] ##Remove Columns with too many NAs
+training <- training[,-5] ##Remove Timestamp Column
+``` 
+###3.1 Testing Data
+```{r,cache=TRUE}
+testing$cvtd_timestamp <- strptime(testing$cvtd_timestamp, "%d/%m/%Y %H:%M") ##Convert to timestamp
+testing$user_name <- as.numeric(testing$user_name) ##Convert user name to numeric
+testing$new_window <- as.numeric(testing$new_window) ##Convert to numeric
+
+factor_columns <- sapply(testing,is.factor) ##Determine Factor Columns
+factor_columns[length(testing)]<-FALSE ##Remove Target Column from vector
+
+for (i in 1:length(testing)) {       ##Replace invalid values in factor columns
+  if (factor_columns[i]) {
+    for (j in 1:nrow(testing)) {
+      testing[j,i] <- if (testing[j,i]=="") "0" else if (testing[j,i]=="#DIV/0!") "0" else testing[j,i]
+    }
+  testing[,i] <- as.numeric(testing[,i]) ##Convert factor columns to numeric
+  }
+}
+testing <- testing[,colSums(is.na(testing))<0.5*nrow(testing)] ##Remove Columns with too many NAs
+testing <- testing[,-5] ##Remove Timestamp Column
+``` 
+
+##4. Create Models
+```{r,cache=TRUE}
+model <- list()
+tc <- trainControl("cv",number = 10,repeats = 10)
+model[[1]] <- train(training[,-length(training)],training$classe,method="nnet",preProcess = c("center", "scale"),trControl=tc)
+model[[2]] <- train(training[,-length(training)],training$classe,method="kknn",preProcess = c("center", "scale"),trControl=tc)
+model[[3]] <- train(training[,-length(training)],training$classe,method="treebag",preProcess = c("center", "scale"),trControl=tc)
+``` 
+
+##.5 Predict and Evaluate
+```{r,cache=TRUE}
+for (i in 1:length(model)) {
+  pred[i] <- predict(model[[i]],testing[,-length(testing)])
+}
+
+
+for (j in 1 : length(model)) {
+result[j] <- c(rep(0,nrow(testing)))
+for (i in 1 : length(result)) {
+  result[i] <- if (grepl(testing$classe[i], pred[i])) 1 else 0
+}
+print(paste("Result for",model[[j]]$method,":",round(100*mean(result[j]),2),"%"))
+}
+``` 
