@@ -4,18 +4,25 @@ author: "Matthias Stierle"
 date: "20.08.2014"
 output: html_document
 ---
+Please note: As I had performance issues due to limited RAM capacity, I had to source the code in rstudio and then knit the document with some calculations commented out.
+
+Task: Predict activity quality from activity monitors
+
 ##1. Load Data
+As a first step the given data set is loaded.
+
 ```{r,cache=TRUE}
 #data <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
-data <- read.csv("pml-training.csv")
-#testing <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
 ```
 Data Source:  http://groupware.les.inf.puc-rio.br/har
 
 ##2. Create Test and Training Data Set
+Second, we split the data set into a training data set used for building our model and a testing data set used to evaluate the accuracy of the built model. We use 60% of the data for training and the remaining 40% for testing, so in other words we will be doing a leave-40%-out cross-validation.
+
 ```{r,cache=TRUE}
 library("caret")
-data <- data[!data$classe=="",]
+data <- data[!data$classe=="",] ##Remove Rows that have no classe value
+set.seed(825)
 trainIndex <- createDataPartition(data$classe,p=0.6,list=FALSE) ##Create split vector
 training <- data[trainIndex,] ##Create training data set
 testing <- data[-trainIndex,] ##Create test data set
@@ -23,6 +30,9 @@ testing <- data[-trainIndex,] ##Create test data set
 
 ##3. Preprocessing
 ###3.1 Training Data
+First of all we have to do some preprocessing. Please note that the preprocessing is very basic and the strategy followed is just to remove columns with untidy as well as missing data and to convert all colums to numeric so that the learning algorithms have no problems dealing with the input data.
+Of course this is a very naive approach but sufficient in the context of this course project
+
 ```{r,cache=TRUE}
 training$cvtd_timestamp <- strptime(training$cvtd_timestamp, "%d/%m/%Y %H:%M") ##Convert to timestamp
 training$user_name <- as.numeric(training$user_name) ##Convert user name to numeric
@@ -42,7 +52,10 @@ for (i in 1:length(training)) {       ##Replace invalid values in factor columns
 training <- training[,colSums(is.na(training))<0.5*nrow(training)] ##Remove Columns with too many NAs
 training <- training[,-5] ##Remove Timestamp Column
 ``` 
-###3.1 Testing Data
+
+###3.2 Testing Data
+Now we will have to apply the same preprocessing steps to the test data set as we will need this when predicting with the model we built from the training data.
+
 ```{r,cache=TRUE}
 testing$cvtd_timestamp <- strptime(testing$cvtd_timestamp, "%d/%m/%Y %H:%M") ##Convert to timestamp
 testing$user_name <- as.numeric(testing$user_name) ##Convert user name to numeric
@@ -55,7 +68,7 @@ for (i in 1:length(testing)) {       ##Replace invalid values in factor columns
   if (factor_columns[i]) {
     for (j in 1:nrow(testing)) {
       testing[j,i] <- if (testing[j,i]=="") "0" else if (testing[j,i]=="#DIV/0!") "0" else testing[j,i]
-    }
+   }
   testing[,i] <- as.numeric(testing[,i]) ##Convert factor columns to numeric
   }
 }
@@ -64,21 +77,26 @@ testing <- testing[,-5] ##Remove Timestamp Column
 ``` 
 
 ##4. Create Models
+Now that we have preprocessed the data we can train different models with different training methods. We tell the train function to use a repeated 10-fold cross-validation in order to tune the models.
+
 ```{r,cache=TRUE}
 model <- list()
-tc <- trainControl("cv",number = 10,repeats = 10)
-model[[1]] <- train(training[,-length(training)],training$classe,method="lda",preProcess = c("center", "scale"),trControl=tc)
+tc <- trainControl("cv",number = 10,repeats = 3)
+model[[1]] <- train(training[,-length(training)],training$classe,method="gbm",preProcess = c("center", "scale"),trControl=tc)
 model[[2]] <- train(training[,-length(training)],training$classe,method="kknn",preProcess = c("center", "scale"),trControl=tc)
 model[[3]] <- train(training[,-length(training)],training$classe,method="treebag",preProcess = c("center", "scale"),trControl=tc)
 ``` 
 
+
+
 ##.5 Predict and Evaluate
+Having built the models we can now see how our models perform on the test data set and if they get close to the expected out of sample error or if they are over-/underfitted.
+
 ```{r,cache=TRUE}
 pred <- list()
 for (i in 1:length(model)) {
-  pred[i] <- predict(model[[i]],testing[,-length(testing)])
+  pred[[i]] <- predict(model[[i]],testing[,-length(testing)])
 }
-
 
 result <- matrix(0,nrow=nrow(testing),ncol=length(model))
 for (j in 1 : length(model)) {
@@ -86,7 +104,11 @@ for (j in 1 : length(model)) {
   for (i in 1 : nrow(testing)) {
     result[i,j] <- if (grepl(testing$classe[i], prediction[i])) 1 else 0
   }
-  print(paste("Result for",model[[j]]$method,":",round(100*mean(result[,j]),2),"%"))
+  print(paste("Out of sample error",model[[j]]$method,":",round(100*(1-mean(result[,j])),2),"%"))
 }
+ind <- c(1:length(model))
+best_method <- ind[colMeans(result)==max(colMeans(result))]
+print(paste("Best result is",max(round(100*colMeans(result),2)),"achieved by training method",model[[best_method]]$method))
+
 ``` 
 
