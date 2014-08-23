@@ -67,23 +67,26 @@ testing <- testing[,-5] ##Remove Timestamp Column
 ```{r,cache=TRUE}
 model <- list()
 tc <- trainControl("cv",number = 10,repeats = 10)
-model[[1]] <- train(training[,-length(training)],training$classe,method="nnet",preProcess = c("center", "scale"),trControl=tc)
+model[[1]] <- train(training[,-length(training)],training$classe,method="lda",preProcess = c("center", "scale"),trControl=tc)
 model[[2]] <- train(training[,-length(training)],training$classe,method="kknn",preProcess = c("center", "scale"),trControl=tc)
 model[[3]] <- train(training[,-length(training)],training$classe,method="treebag",preProcess = c("center", "scale"),trControl=tc)
 ``` 
 
 ##.5 Predict and Evaluate
 ```{r,cache=TRUE}
+pred <- list()
 for (i in 1:length(model)) {
   pred[i] <- predict(model[[i]],testing[,-length(testing)])
 }
 
 
+result <- matrix(0,nrow=nrow(testing),ncol=length(model))
 for (j in 1 : length(model)) {
-result[j] <- c(rep(0,nrow(testing)))
-for (i in 1 : length(result)) {
-  result[i] <- if (grepl(testing$classe[i], pred[i])) 1 else 0
-}
-print(paste("Result for",model[[j]]$method,":",round(100*mean(result[j]),2),"%"))
+  prediction <- pred[[j]]
+  for (i in 1 : nrow(testing)) {
+    result[i,j] <- if (grepl(testing$classe[i], prediction[i])) 1 else 0
+  }
+  print(paste("Result for",model[[j]]$method,":",round(100*mean(result[,j]),2),"%"))
 }
 ``` 
+
