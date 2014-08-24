@@ -4,15 +4,13 @@ author: "Matthias Stierle"
 date: "20.08.2014"
 output: html_document
 ---
-Please note: As I had performance issues due to limited RAM capacity, I had to source the code in rstudio and then knit the document with some calculations commented out.
-
-Task: Predict activity quality from activity monitors
+###Task: Predict activity quality from activity monitors
 
 ##1. Load Data
 As a first step the given data set is loaded.
 
 ```{r,cache=TRUE}
-#data <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+data <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
 ```
 Data Source:  http://groupware.les.inf.puc-rio.br/har
 
@@ -41,16 +39,16 @@ training$new_window <- as.numeric(training$new_window) ##Convert to numeric
 factor_columns <- sapply(training,is.factor) ##Determine Factor Columns
 factor_columns[length(training)]<-FALSE ##Remove Target Column from vector
 
-for (i in 1:length(training)) {       ##Replace invalid values in factor columns
+for (i in 1:length(training)) {      
   if (factor_columns[i]) {
-    for (j in 1:nrow(training)) {
-      training[j,i] <- if (training[j,i]=="") "0" else if (training[j,i]=="#DIV/0!") "0" else training[j,i]
-    }
   training[,i] <- as.numeric(training[,i]) ##Convert factor columns to numeric
   }
 }
-training <- training[,colSums(is.na(training))<0.5*nrow(training)] ##Remove Columns with too many NAs
+rem_col <- (colSums(is.na(training))<0.1*nrow(training)) ##Remove Columns with too many NAs
+training <- training[,rem_col]
 training <- training[,-5] ##Remove Timestamp Column
+rem_col2 <-c(sapply(training[,sapply(training,is.numeric)],median)!=1,TRUE) ##Remove Columns with bad data
+training <- training[,rem_col2]
 ``` 
 
 ###3.2 Testing Data
@@ -64,16 +62,14 @@ testing$new_window <- as.numeric(testing$new_window) ##Convert to numeric
 factor_columns <- sapply(testing,is.factor) ##Determine Factor Columns
 factor_columns[length(testing)]<-FALSE ##Remove Target Column from vector
 
-for (i in 1:length(testing)) {       ##Replace invalid values in factor columns
+for (i in 1:length(testing)) {       
   if (factor_columns[i]) {
-    for (j in 1:nrow(testing)) {
-      testing[j,i] <- if (testing[j,i]=="") "0" else if (testing[j,i]=="#DIV/0!") "0" else testing[j,i]
-   }
   testing[,i] <- as.numeric(testing[,i]) ##Convert factor columns to numeric
   }
 }
-testing <- testing[,colSums(is.na(testing))<0.5*nrow(testing)] ##Remove Columns with too many NAs
+testing <- testing[,rem_col]
 testing <- testing[,-5] ##Remove Timestamp Column
+testing <- testing[,rem_col2]
 ``` 
 
 ##4. Create Models
@@ -82,14 +78,16 @@ Now that we have preprocessed the data we can train different models with differ
 ```{r,cache=TRUE}
 model <- list()
 tc <- trainControl("cv",number = 10,repeats = 3)
-model[[1]] <- train(training[,-length(training)],training$classe,method="gbm",preProcess = c("center", "scale"),trControl=tc)
-model[[2]] <- train(training[,-length(training)],training$classe,method="kknn",preProcess = c("center", "scale"),trControl=tc)
-model[[3]] <- train(training[,-length(training)],training$classe,method="treebag",preProcess = c("center", "scale"),trControl=tc)
+model[[1]] <- train(training[,-length(training)],training$classe,method="gbm",preProcess = c("center", "scale","pca"),trControl=tc)
+``` 
+```{r,cache=TRUE}
+model[[2]] <- train(training[,-length(training)],training$classe,method="kknn",preProcess = c("center", "scale","pca"),trControl=tc)
+``` 
+```{r,cache=TRUE}
+model[[3]] <- train(training[,-length(training)],training$classe,method="treebag",preProcess = c("center", "scale","pca"),trControl=tc)
 ``` 
 
-
-
-##.5 Predict and Evaluate
+##5. Predict and Evaluate
 Having built the models we can now see how our models perform on the test data set and if they get close to the expected out of sample error or if they are over-/underfitted.
 
 ```{r,cache=TRUE}
@@ -108,7 +106,34 @@ for (j in 1 : length(model)) {
 }
 ind <- c(1:length(model))
 best_method <- ind[colMeans(result)==max(colMeans(result))]
-print(paste("Best result is",max(round(100*colMeans(result),2)),"achieved by training method",model[[best_method]]$method))
+print(paste("Best result is",max(round(100*colMeans(result),2)),"% achieved by training method",model[[best_method]]$method))
 
 ``` 
 
+##6. Predict sample data set
+Now we will use our model to predict a little sample.
+```{r,cache=TRUE}
+sample <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+
+
+sample$cvtd_timestamp <- strptime(sample$cvtd_timestamp, "%d/%m/%Y %H:%M") ##Convert to timestamp
+sample$user_name <- as.numeric(sample$user_name) ##Convert user name to numeric
+sample$new_window <- as.numeric(sample$new_window) ##Convert to numeric
+
+factor_columns <- sapply(sample,is.factor) ##Determine Factor Columns
+
+for (i in 1:length(sample)) {       
+  if (factor_columns[i]) {
+  sample[,i] <- as.numeric(sample[,i]) ##Convert factor columns to numeric
+  }
+}
+sample <- sample[,rem_col]
+sample <- sample[,-5] ##Remove Timestamp Column
+sample <- sample[,rem_col2]
+``` 
+```{r,cache=TRUE}
+sample_pred <- predict(model[[best_method]],sample[,-length(sample)])
+print("Result of prediciton")
+sample_pred
+``` 
